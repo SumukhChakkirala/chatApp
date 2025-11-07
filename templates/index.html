@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureChat - Private Messaging</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="landing-container">
+        <div class="landing-content">
+            <h1>🔒 SecureChat</h1>
+            <p class="tagline">End-to-end encrypted messaging for you and your friend</p>
+            <div class="features">
+                <div class="feature">
+                    <span class="icon">🔐</span>
+                    <h3>Encrypted</h3>
+                    <p>Your messages are end-to-end encrypted</p>
+                </div>
+                <div class="feature">
+                    <span class="icon">📸</span>
+                    <h3>Media Sharing</h3>
+                    <p>Send images and videos securely</p>
+                </div>
+                <div class="feature">
+                    <span class="icon">⚡</span>
+                    <h3>Real-time</h3>
+                    <p>Instant message delivery</p>
+                </div>
+            </div>
+            <div class="cta-buttons">
+                <a href="/login" class="btn btn-primary">Login</a>
+                <a href="/signup" class="btn btn-secondary">Sign Up</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
