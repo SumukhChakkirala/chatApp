@@ -4,10 +4,15 @@
 # Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+# Create sequence for discriminator (Discord-style 5-digit numbers)
+CREATE SEQUENCE IF NOT EXISTS user_discriminator_seq START 1;
+
 # Users table (linked to Supabase Auth)
 CREATE TABLE users (
     id UUID PRIMARY KEY REFERENCES auth.users(id),
     username TEXT UNIQUE NOT NULL,
+    discriminator INTEGER DEFAULT nextval('user_discriminator_seq') NOT NULL,
+    user_tag TEXT UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
 

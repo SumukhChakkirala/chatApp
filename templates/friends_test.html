@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Friend System Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        button {
+            background: #5b6cf9;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #4a5ad7;
+        }
+        .success {
+            color: green;
+            padding: 10px;
+            background: #d4edda;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .error {
+            color: red;
+            padding: 10px;
+            background: #f8d7da;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .friend-item, .request-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .user-tag {
+            font-weight: bold;
+            color: #5b6cf9;
+        }
+    </style>
+</head>
+<body>
+    <h1>Friend System Test Page</h1>
+    <p>Current User: <span id="currentUser"></span></p>
+    <a href="/logout">Logout</a> | <a href="/chat">Back to Chat</a>
+
+    <!-- Send Friend Request -->
+    <div class="section">
+        <h2>Send Friend Request</h2>
+        <input type="text" id="userTagInput" placeholder="Enter user tag (e.g., alice#00001)">
+        <button onclick="sendFriendRequest()">Send Request</button>
+        <div id="sendResult"></div>
+    </div>
+
+    <!-- Pending Requests -->
+    <div class="section">
+        <h2>Pending Friend Requests</h2>
+        <button onclick="loadPendingRequests()">Refresh</button>
+        
+        <h3>Incoming Requests</h3>
+        <div id="incomingRequests"></div>
+        
+        <h3>Outgoing Requests</h3>
+        <div id="outgoingRequests"></div>
+    </div>
+
+    <!-- Friends List -->
+    <div class="section">
+        <h2>Friends</h2>
+        <button onclick="loadFriends()">Refresh</button>
+        <div id="friendsList"></div>
+    </div>
+
+    <script>
+        const CURRENT_USER_TAG = "{{ current_user.user_tag }}";
+        document.getElementById('currentUser').textContent = CURRENT_USER_TAG;
+
+        async function sendFriendRequest() {
+            const userTag = document.getElementById('userTagInput').value.trim();
+            const resultDiv = document.getElementById('sendResult');
+            
+            if (!userTag) {
+                resultDiv.innerHTML = '<div class="error">Please enter a user tag</div>';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/friends/request', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ receiver_user_tag: userTag })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `<div class="success">${data.message}</div>`;
+                    document.getElementById('userTagInput').value = '';
+                    loadPendingRequests();
+                } else {
+                    resultDiv.innerHTML = `<div class="error">${data.error}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function loadPendingRequests() {
+            try {
+                const response = await fetch('/api/friends/requests/pending');
+                const data = await response.json();
+
+                if (data.success) {
+                    // Display incoming requests
+                    const incomingDiv = document.getElementById('incomingRequests');
+                    if (data.incoming.length === 0) {
+                        incomingDiv.innerHTML = '<p>No incoming requests</p>';
+                    } else {
+                        incomingDiv.innerHTML = data.incoming.map(req => `
+                            <div class="request-item">
+                                <span>
+                                    <span class="user-tag">${req.users.user_tag}</span>
+                                    (${req.users.username})
+                                </span>
+                                <div>
+                                    <button onclick="acceptRequest('${req.id}')">Accept</button>
+                                    <button onclick="rejectRequest('${req.id}')" style="background: #dc3545">Reject</button>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+
+                    // Display outgoing requests
+                    const outgoingDiv = document.getElementById('outgoingRequests');
+                    if (data.outgoing.length === 0) {
+                        outgoingDiv.innerHTML = '<p>No outgoing requests</p>';
+                    } else {
+                        outgoingDiv.innerHTML = data.outgoing.map(req => `
+                            <div class="request-item">
+                                <span>
+                                    <span class="user-tag">${req.users.user_tag}</span>
+                                    (${req.users.username}) - Pending
+                                </span>
+                            </div>
+                        `).join('');
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading pending requests:', error);
+            }
+        }
+
+        async function acceptRequest(requestId) {
+            try {
+                const response = await fetch(`/api/friends/accept/${requestId}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Friend request accepted!');
+                    loadPendingRequests();
+                    loadFriends();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function rejectRequest(requestId) {
+            try {
+                const response = await fetch(`/api/friends/reject/${requestId}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Friend request rejected');
+                    loadPendingRequests();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function loadFriends() {
+            try {
+                const response = await fetch('/api/friends/');
+                const data = await response.json();
+
+                const friendsDiv = document.getElementById('friendsList');
+                
+                if (data.success) {
+                    if (data.friends.length === 0) {
+                        friendsDiv.innerHTML = '<p>No friends yet</p>';
+                    } else {
+                        friendsDiv.innerHTML = data.friends.map(friend => `
+                            <div class="friend-item">
+                                <span>
+                                    <span class="user-tag">${friend.user_tag}</span>
+                                    (${friend.username})
+                                </span>
+                                <button onclick="removeFriend('${friend.id}')" style="background: #dc3545">Remove</button>
+                            </div>
+                        `).join('');
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading friends:', error);
+            }
+        }
+
+        async function removeFriend(friendId) {
+            if (!confirm('Are you sure you want to remove this friend?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/friends/${friendId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('Friend removed');
+                    loadFriends();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        // Load data on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            loadPendingRequests();
+            loadFriends();
+        });
+    </script>
+</body>
+</html>

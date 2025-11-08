@@ -44,10 +44,10 @@ try:
     print(f"✓ Users table exists and is accessible")
     print()
     
-    # Test messages table
-    print("Testing messages table...")
-    response = supabase.table('messages').select("*").limit(1).execute()
-    print("✓ Messages table exists and is accessible")
+    # Test direct_messages table
+    print("Testing direct_messages table...")
+    response = supabase.table('direct_messages').select("*").limit(1).execute()
+    print("✓ Direct messages table exists and is accessible")
     print()
     
     # Test storage
