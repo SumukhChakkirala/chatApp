@@ -8,7 +8,7 @@ from functools import wraps
 import os
 import uuid
 from datetime import datetime, timedelta
-
+online_users = set()
 def to_ist(utc_str):
     if not utc_str:
         return ''
@@ -175,13 +175,11 @@ def chat():
             for msg in messages:
                 msg['created_at_ist'] = to_ist(msg.get('created_at'))
 
-        is_friend_online = friend and friend['id'] in online_users
         return render_template('chat.html', 
             current_user={'id': session['user_id'], 'username': session['username']},
             friend_id=friend['id'] if friend else '',
             friend_name=friend['username'] if friend else 'No users',
-            messages=messages,
-            is_friend_online=is_friend_online            
+            messages=messages
             )
     except Exception as e:
         print(f"Chat error: {e}")
@@ -299,22 +297,21 @@ def handle_join(data):
         join_room(user_id)
         print(f"User {user_id} joined their room")
 
-# Track online users by user_id
-online_users = set()
 
 @socketio.on('user_online')
 def handle_user_online(data):
     user_id = data.get('user_id')
     if user_id:
         online_users.add(user_id)
-        print(f"User {user_id} is online")
+        socketio.emit('presence_update', {'online_users': list(online_users)})
 
 @socketio.on('user_offline')
 def handle_user_offline(data):
     user_id = data.get('user_id')
     if user_id:
         online_users.discard(user_id)
-        print(f"User {user_id} is offline")
+        socketio.emit('presence_update', {'online_users': list(online_users)})
+
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
