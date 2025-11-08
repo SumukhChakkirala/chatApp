@@ -184,6 +184,7 @@ def send_message():
         receiver_id = request.form.get('receiver_id')
         content = request.form.get('content', '').strip()
         file = request.files.get('file')
+        reply_to_id = request.form.get('reply_to_id')  # Get reply_to_id if present
         
         # Validate receiver_id
         if not receiver_id or receiver_id == '':
@@ -224,7 +225,8 @@ def send_message():
             'receiver_id': receiver_id,
             'content': content if content else None,
             'file_url': file_url,
-            'file_type': file_type
+            'file_type': file_type,
+            'reply_to_id': reply_to_id if reply_to_id else None  # Include reply_to_id
         }
         
         message_response = supabase.table('direct_messages').insert(message_data).execute()
@@ -266,6 +268,22 @@ def get_messages():
 
         response = query.execute()
         messages = response.data if response.data else []
+        
+        # Enrich messages with replied_to data
+        for message in messages:
+            if message.get('reply_to_id'):
+                try:
+                    # Fetch the replied-to message
+                    replied_msg_response = supabase.table('direct_messages').select('id, content, sender_id').eq('id', message['reply_to_id']).execute()
+                    if replied_msg_response.data:
+                        replied_msg = replied_msg_response.data[0]
+                        # Fetch the sender of replied message
+                        sender_response = supabase.table('users').select('id, username').eq('id', replied_msg['sender_id']).execute()
+                        if sender_response.data:
+                            replied_msg['sender'] = sender_response.data[0]
+                        message['replied_to'] = replied_msg
+                except Exception as e:
+                    print(f"Error fetching replied message: {e}")
 
         return jsonify({'success': True, 'messages': messages}), 200
     except Exception as e:

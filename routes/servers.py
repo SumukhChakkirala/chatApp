@@ -429,7 +429,7 @@ def get_server_messages(server_id):
         
         # Get messages
         messages = supabase.table('server_messages').select(
-            'id, content, file_url, file_type, created_at, sender_id'
+            'id, content, file_url, file_type, created_at, sender_id, reply_to_id'
         ).eq('server_id', server_id).order('created_at', desc=False).limit(100).execute()
         
         messages_list = []
@@ -440,17 +440,31 @@ def get_server_messages(server_id):
                     'id, username, user_tag'
                 ).eq('id', msg['sender_id']).execute()
                 
-                if sender.data:
-                    message_info = {
-                        'id': msg['id'],
-                        'content': msg['content'],
-                        'file_url': msg.get('file_url'),
-                        'file_type': msg.get('file_type'),
-                        'created_at': msg['created_at'],
-                        'sender': sender.data[0],
-                        'is_own_message': msg['sender_id'] == user_id
-                    }
-                    messages_list.append(message_info)
+                message_info = {
+                    'id': msg['id'],
+                    'content': msg['content'],
+                    'file_url': msg.get('file_url'),
+                    'file_type': msg.get('file_type'),
+                    'created_at': msg['created_at'],
+                    'sender': sender.data[0] if sender.data else None,
+                    'is_own_message': msg['sender_id'] == user_id
+                }
+                
+                # Fetch replied_to message if exists
+                if msg.get('reply_to_id'):
+                    try:
+                        replied_msg_response = supabase.table('server_messages').select('id, content, sender_id').eq('id', msg['reply_to_id']).execute()
+                        if replied_msg_response.data:
+                            replied_msg = replied_msg_response.data[0]
+                            # Fetch the sender of replied message
+                            replied_sender_response = supabase.table('users').select('id, username').eq('id', replied_msg['sender_id']).execute()
+                            if replied_sender_response.data:
+                                replied_msg['sender'] = replied_sender_response.data[0]
+                            message_info['replied_to'] = replied_msg
+                    except Exception as e:
+                        print(f"Error fetching replied message: {e}")
+                
+                messages_list.append(message_info)
         
         return jsonify({
             'success': True,
@@ -472,6 +486,7 @@ def send_server_message(server_id):
         user_id = session['user_id']
         data = request.get_json()
         content = data.get('content', '').strip()
+        reply_to_id = data.get('reply_to_id')  # Get reply_to_id if present
         
         if not content:
             return jsonify({'success': False, 'error': 'Message content is required'}), 400
@@ -489,7 +504,8 @@ def send_server_message(server_id):
         message_data = {
             'server_id': server_id,
             'sender_id': user_id,
-            'content': content
+            'content': content,
+            'reply_to_id': reply_to_id if reply_to_id else None  # Include reply_to_id
         }
         
         result = supabase.table('server_messages').insert(message_data).execute()
