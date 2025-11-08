@@ -1,6 +1,14 @@
 // Initialize Socket.IO connection
 const socket = io();
 
+window.addEventListener('load', () => {
+    socket.emit('user_online', { user_id: CURRENT_USER_ID });
+});
+
+window.addEventListener('beforeunload', () => {
+    socket.emit('user_offline', { user_id: CURRENT_USER_ID });
+});
+
 // File preview handling
 const fileInput = document.getElementById('fileInput');
 const filePreview = document.getElementById('filePreview');
@@ -140,14 +148,23 @@ function scrollToBottom() {
 // Socket.IO events
 socket.on('connect', () => {
     console.log('Connected to server');
-    socket.emit('join', { user_id: CURRENT_USER_ID });
+    if (typeof CURRENT_USER_ID !== 'undefined' && CURRENT_USER_ID) {
+        socket.emit('join', { user_id: CURRENT_USER_ID });
+        console.log('Joined room for user:', CURRENT_USER_ID);
+    }
+});
+
+socket.on('disconnect', () => {
+    console.log('Disconnected from server');
 });
 
 socket.on('new_message', (data) => {
+    console.log('📩 New message received from friend:', data);
     displayMessage(data.message);
 });
 
 socket.on('message_sent', (data) => {
+    console.log('✅ Message sent successfully:', data);
     displayMessage(data.message);
 });
 

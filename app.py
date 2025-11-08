@@ -160,10 +160,12 @@ def chat():
             messages = messages_response.data
         
         return render_template('chat.html', 
-                             current_user={'id': session['user_id'], 'username': session['username']},
-                             friend_id=friend['id'] if friend else '',
-                             friend_name=friend['username'] if friend else 'No users',
-                             messages=messages)
+            current_user={'id': session['user_id'], 'username': session['username']},
+            friend_id=friend['id'] if friend else '',
+            friend_name=friend['username'] if friend else 'No users',
+            messages=messages,
+            is_friend_online=(friend and friend['id'] in online_users)
+            )
     except Exception as e:
         print(f"Chat error: {e}")
         flash('Error loading chat', 'error')
@@ -250,6 +252,23 @@ def handle_join(data):
     if user_id:
         join_room(user_id)
         print(f"User {user_id} joined their room")
+
+# Track online users by user_id
+online_users = set()
+
+@socketio.on('user_online')
+def handle_user_online(data):
+    user_id = data.get('user_id')
+    if user_id:
+        online_users.add(user_id)
+        print(f"User {user_id} is online")
+
+@socketio.on('user_offline')
+def handle_user_offline(data):
+    user_id = data.get('user_id')
+    if user_id:
+        online_users.discard(user_id)
+        print(f"User {user_id} is offline")
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)

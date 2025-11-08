@@ -32,7 +32,9 @@
                     <div class="contact-avatar">{{ friend_name[0] if friend_name else '?' }}</div>
                     <div class="contact-info">
                         <h3>{{ friend_name }}</h3>
-                        <p class="status">Online</p>
+                        {% if is_friend_online %}
+                            <p class="status">Online</p>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -44,7 +46,9 @@
                 <div class="contact-avatar">{{ friend_name[0] if friend_name else '?' }}</div>
                 <div class="chat-header-info">
                     <h3>{{ friend_name }}</h3>
-                    <span class="status">Online</span>
+                    {% if is_friend_online %}
+                        <span class="status">Online</span>
+                    {% endif %}
                 </div>
             </div>
 
