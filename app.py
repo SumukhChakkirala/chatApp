@@ -254,6 +254,35 @@ def send_message():
         print(f"Send message error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/api/messages', methods=['GET'])
+@login_required
+def get_messages():
+    friend_id = request.args.get('friend_id')
+    since = request.args.get('since')
+
+    if not friend_id:
+        return jsonify({'success': False, 'error': 'Friend ID is required'}), 400
+
+    try:
+        filters = (
+            f"and(sender_id.eq.{session['user_id']},receiver_id.eq.{friend_id}),"
+            f"and(sender_id.eq.{friend_id},receiver_id.eq.{session['user_id']})"
+        )
+
+        query = supabase.table('messages').select('*').or_(filters).order('created_at', desc=False)
+
+        if since:
+            query = query.filter('created_at', 'gt', since)
+
+        response = query.execute()
+        messages = response.data if response.data else []
+
+        return jsonify({'success': True, 'messages': messages}), 200
+    except Exception as e:
+        print(f"Get messages error: {e}")
+        return jsonify({'success': False, 'error': 'Failed to fetch messages'}), 500
+
 # SocketIO events
 @socketio.on('connect')
 def handle_connect():

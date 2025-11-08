@@ -103,6 +103,8 @@
         const CURRENT_USER_ID = "{{ current_user.id }}";
         const CURRENT_USERNAME = "{{ current_user.username }}";
         const FRIEND_ID = "{{ friend_id }}";
+    const INITIAL_LAST_TIMESTAMP = "{{ messages[-1]['created_at'] if messages else '' }}";
+    const INITIAL_MESSAGE_IDS = JSON.parse('{{ messages | map(attribute="id") | list | tojson | safe }}');
     </script>
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 </body>
