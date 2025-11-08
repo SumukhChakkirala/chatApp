@@ -73,7 +73,7 @@ class Message:
                 'file_type': file_type,
                 'created_at': datetime.datetime.now().isoformat()
             }
-            response = supabase.table('messages').insert(data).execute()
+            response = supabase.table('direct_messages').insert(data).execute()
             return {'success': True, 'message': response.data[0]}
         except Exception as e:
             return {'success': False, 'error': str(e)}
@@ -82,7 +82,7 @@ class Message:
     def get_conversation(user1_id, user2_id):
         """Get messages between two users"""
         try:
-            response = supabase.table('messages').select('*').or_(
+            response = supabase.table('direct_messages').select('*').or_(
                 f"and(sender_id.eq.{user1_id},receiver_id.eq.{user2_id}),and(sender_id.eq.{user2_id},receiver_id.eq.{user1_id})"
             ).order('created_at', desc=False).execute()
             return response.data

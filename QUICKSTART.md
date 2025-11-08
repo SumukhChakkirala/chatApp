@@ -49,7 +49,21 @@
    SECRET_KEY=any-random-string
    ```
 
-### Step 3: Run the App (1 minute)
+### Step 3: Run Database Migration (New!)
+
+**IMPORTANT**: This adds user tags (username#ID) for multi-user chat
+
+1. Go to Supabase Dashboard → SQL Editor
+2. Click "New query"
+3. Copy and paste contents of `migration_add_user_tag.sql`
+4. Click "RUN"
+
+This enables:
+- Username#ID tags (e.g., `alice#a1b2c3d4`)
+- User search functionality
+- Multi-user chat support
+
+### Step 4: Run the App (1 minute)
 
 ```powershell
 python app.py
@@ -60,7 +74,7 @@ You should see:
 * Running on http://0.0.0.0:5000
 ```
 
-### Step 4: Create Accounts & Chat
+### Step 5: Create Accounts & Chat
 
 1. **First User**
    - Open browser: http://localhost:5000
@@ -68,6 +82,7 @@ You should see:
    - Username: `alice` (or any name)
    - Password: `password123` (min 6 chars)
    - Click "Sign Up"
+   - You'll see your user tag: `alice#xxxxxxxx`
 
 2. **Second User**
    - Open INCOGNITO/PRIVATE window
@@ -78,9 +93,11 @@ You should see:
    - Click "Sign Up"
 
 3. **Start Chatting!**
-   - Both users will now see each other in the chat
-   - Type messages and see them appear instantly
-   - Click 📎 to send images or videos
+   - Search for the other user using the search box
+   - Type their username (e.g., "alice") or user tag
+   - Click on the user from search results
+   - Chat window opens - start messaging!
+   - Messages appear instantly with real-time updates
 
 ## Testing File Uploads
 
@@ -90,6 +107,31 @@ You should see:
 4. Type a message (optional)
 5. Click "Send"
 6. File appears in chat with thumbnail/player
+
+## New Multi-User Features
+
+### User Search
+- Type any username or user tag in the search box
+- Results appear instantly
+- Click a user to open chat with them
+
+### User Tags
+- Every user gets unique tag: `username#shortID`
+- Example: `alice#a1b2c3d4`
+- Displayed in sidebar next to your username
+- Share your tag with friends so they can find you
+
+### Multiple Conversations
+- Chat with unlimited users
+- Search and click to start new conversations
+- Previous chats saved in contacts list
+- Click any contact to switch conversations
+- Each chat is completely separate
+
+### Empty Chat State
+- New users start with empty chat window
+- Search for users to begin chatting
+- No automatic pairing
 
 ## Troubleshooting
 

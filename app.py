@@ -9,9 +9,17 @@ import os
 import uuid
 from datetime import datetime
 
+# Import blueprints
+from routes.friends import friends_bp
+from routes.servers import servers_bp
+
 app = Flask(__name__)
 app.config.from_object(Config)
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Register blueprints
+app.register_blueprint(friends_bp)
+app.register_blueprint(servers_bp)
 
 # Initialize Supabase client
 supabase: Client = create_client(app.config['SUPABASE_URL'], app.config['SUPABASE_KEY'])
@@ -51,7 +59,7 @@ def signup():
             flash('Password must be at least 6 characters', 'error')
             return render_template('signup.html')
         
-        # Check if username already exists in users table
+        # Check if username already exists
         try:
             existing = supabase.table('users').select('id').eq('username', username).execute()
             if existing.data:
@@ -59,30 +67,28 @@ def signup():
                 return render_template('signup.html')
         except Exception as e:
             print(f"Error checking username: {e}")
+            flash('Error checking username. Please try again.', 'error')
+            return render_template('signup.html')
         
         try:
-            # Create user in Supabase Auth
-            auth_response = supabase.auth.sign_up({
-                "email": f"{username}@example.com",  # Using username as email prefix
-                "password": password
-            })
+            # Hash the password
+            hashed_password = generate_password_hash(password)
             
-            if auth_response.user:
-                user_id = auth_response.user.id
+            # Insert user directly into users table (let trigger handle discriminator/user_tag)
+            result = supabase.table('users').insert({
+                'username': username,
+                'password': hashed_password
+            }).execute()
+            
+            if result.data and len(result.data) > 0:
+                user = result.data[0]
+                user_id = user['id']
+                user_tag = user.get('user_tag', f"{username}#00001")
                 
-                # Insert user into users table
-                try:
-                    supabase.table('users').insert({
-                        'id': user_id,
-                        'username': username
-                    }).execute()
-                except Exception as e:
-                    print(f"Error inserting user: {e}")
-                    flash('Error creating user profile', 'error')
-                    return render_template('signup.html')
-                
+                # Set session
                 session['user_id'] = user_id
                 session['username'] = username
+                session['user_tag'] = user_tag
                 
                 flash('Account created successfully!', 'success')
                 return redirect(url_for('chat'))
@@ -91,11 +97,7 @@ def signup():
                 
         except Exception as e:
             print(f"Signup error: {e}")
-            error_msg = str(e)
-            if 'already registered' in error_msg.lower() or 'already exists' in error_msg.lower():
-                flash('This account already exists. Please try logging in.', 'error')
-            else:
-                flash('Error creating account. Please try again.', 'error')
+            flash('Error creating account. Please try again.', 'error')
     
     return render_template('signup.html')
 
@@ -110,60 +112,66 @@ def login():
             return render_template('login.html')
         
         try:
-            # Sign in with Supabase Auth
-            auth_response = supabase.auth.sign_in_with_password({
-                "email": f"{username}@example.com",
-                "password": password
-            })
+            # Get user from database
+            user_data = supabase.table('users').select('*').eq('username', username).execute()
             
-            if auth_response.user:
-                session['user_id'] = auth_response.user.id
-                session['username'] = username
-                return redirect(url_for('chat'))
+            if user_data.data and len(user_data.data) > 0:
+                user = user_data.data[0]
+                
+                # Check password hash
+                if check_password_hash(user['password'], password):
+                    session['user_id'] = user['id']
+                    session['username'] = user['username']
+                    session['user_tag'] = user.get('user_tag', f"{username}#00001")
+                    flash('Login successful!', 'success')
+                    return redirect(url_for('chat'))
+                else:
+                    flash('Invalid username or password', 'error')
             else:
                 flash('Invalid username or password', 'error')
                 
         except Exception as e:
             print(f"Login error: {e}")
-            error_msg = str(e).lower()
-            if 'invalid' in error_msg or 'credentials' in error_msg or 'password' in error_msg:
-                flash('Invalid username or password', 'error')
-            else:
-                flash('Login failed. Please try again.', 'error')
+            flash('Login failed. Please try again.', 'error')
     
     return render_template('login.html')
 
 @app.route('/logout')
 @login_required
 def logout():
-    supabase.auth.sign_out()
     session.clear()
+    flash('You have been logged out', 'success')
     return redirect(url_for('index'))
+
+@app.route('/friends-test')
+@login_required
+def friends_test():
+    """Test page for friend system"""
+    return render_template('friends_test.html', 
+                         current_user={
+                             'id': session['user_id'], 
+                             'username': session['username'],
+                             'user_tag': session.get('user_tag', session['username'])
+                         })
 
 @app.route('/chat')
 @login_required
 def chat():
     try:
-        # Get all users except current user
+        # Get all users except current user (for search functionality)
         users_response = supabase.table('users').select('*').neq('id', session['user_id']).execute()
         users = users_response.data
         
-        # For a 2-person chat, get the other user (friend)
-        friend = users[0] if users else None
-        
-        # Get messages between current user and friend
-        messages = []
-        if friend:
-            messages_response = supabase.table('messages').select('*').or_(
-                f"and(sender_id.eq.{session['user_id']},receiver_id.eq.{friend['id']}),and(sender_id.eq.{friend['id']},receiver_id.eq.{session['user_id']})"
-            ).order('created_at', desc=False).execute()
-            messages = messages_response.data
-        
+        # No auto-pairing - empty chat window by default
         return render_template('chat.html', 
-                             current_user={'id': session['user_id'], 'username': session['username']},
-                             friend_id=friend['id'] if friend else '',
-                             friend_name=friend['username'] if friend else 'No users',
-                             messages=messages)
+                             current_user={
+                                 'id': session['user_id'], 
+                                 'username': session['username'],
+                                 'user_tag': session.get('user_tag', session['username'])
+                             },
+                             users=users,
+                             messages=[]
+                             )
     except Exception as e:
         print(f"Chat error: {e}")
         flash('Error loading chat', 'error')
@@ -219,7 +227,7 @@ def send_message():
             'file_type': file_type
         }
         
-        message_response = supabase.table('messages').insert(message_data).execute()
+        message_response = supabase.table('direct_messages').insert(message_data).execute()
         message = message_response.data[0] if message_response.data else None
         
         if message:
@@ -251,7 +259,7 @@ def get_messages():
             f"and(sender_id.eq.{friend_id},receiver_id.eq.{session['user_id']})"
         )
 
-        query = supabase.table('messages').select('*').or_(filters).order('created_at', desc=False)
+        query = supabase.table('direct_messages').select('*').or_(filters).order('created_at', desc=False)
 
         if since:
             query = query.filter('created_at', 'gt', since)
@@ -263,6 +271,27 @@ def get_messages():
     except Exception as e:
         print(f"Get messages error: {e}")
         return jsonify({'success': False, 'error': 'Failed to fetch messages'}), 500
+
+
+@app.route('/api/search_users', methods=['GET'])
+@login_required
+def search_users():
+    search_query = request.args.get('q', '').strip()
+    
+    if not search_query:
+        return jsonify({'success': True, 'users': []}), 200
+    
+    try:
+        # Search by username or user_tag
+        users_response = supabase.table('users').select('id, username, user_tag').neq('id', session['user_id']).or_(
+            f"username.ilike.%{search_query}%,user_tag.ilike.%{search_query}%"
+        ).limit(20).execute()
+        
+        users = users_response.data if users_response.data else []
+        return jsonify({'success': True, 'users': users}), 200
+    except Exception as e:
+        print(f"Search users error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # SocketIO events
 @socketio.on('connect')
@@ -279,6 +308,82 @@ def handle_join(data):
     if user_id:
         join_room(user_id)
         print(f"User {user_id} joined their room")
+
+@socketio.on('join_server')
+def handle_join_server(data):
+    server_id = data.get('server_id')
+    if server_id:
+        join_room(f"server_{server_id}")
+        print(f"User joined server room: server_{server_id}")
+
+@socketio.on('leave_server')
+def handle_leave_server(data):
+    server_id = data.get('server_id')
+    if server_id:
+        from flask_socketio import leave_room
+        leave_room(f"server_{server_id}")
+        print(f"User left server room: server_{server_id}")
+
+@socketio.on('server_message')
+def handle_server_message(data):
+    """Handle server message via WebSocket"""
+    server_id = data.get('server_id')
+    content = data.get('content', '').strip()
+    
+    if not server_id or not content:
+        emit('error', {'message': 'Invalid message data'})
+        return
+    
+    if 'user_id' not in session:
+        emit('error', {'message': 'Not authenticated'})
+        return
+    
+    try:
+        user_id = session['user_id']
+        
+        # Check if user is a member
+        is_member = supabase.rpc('is_server_member', {
+            'sid': server_id,
+            'uid': user_id
+        }).execute()
+        
+        if not is_member.data:
+            emit('error', {'message': 'Not a member of this server'})
+            return
+        
+        # Save message
+        message_data = {
+            'server_id': server_id,
+            'sender_id': user_id,
+            'content': content
+        }
+        
+        result = supabase.table('server_messages').insert(message_data).execute()
+        
+        if result.data:
+            msg = result.data[0]
+            
+            # Get sender info
+            sender = supabase.table('users').select(
+                'id, username, user_tag'
+            ).eq('id', user_id).execute()
+            
+            message_info = {
+                'id': msg['id'],
+                'content': msg['content'],
+                'created_at': msg['created_at'],
+                'sender': sender.data[0] if sender.data else None,
+                'server_id': server_id
+            }
+            
+            # Broadcast to all members in the server room
+            emit('new_server_message', message_info, room=f"server_{server_id}")
+        else:
+            emit('error', {'message': 'Failed to send message'})
+            
+    except Exception as e:
+        print(f"Server message error: {e}")
+        emit('error', {'message': str(e)})
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
