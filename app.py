@@ -36,105 +36,127 @@ def login_required(f):
 # Routes
 @app.route('/')
 def index():
-    if 'user_id' in session:
-        return redirect(url_for('chat'))
-    return render_template('index.html')
+    try:
+        if 'user_id' in session:
+            return redirect(url_for('chat'))
+        return render_template('index.html')
+    except Exception as e:
+        print(f"Error in index route: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"Error: {e}", 500
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        confirm_password = request.form.get('confirm_password')
-        
-        if not username or not password:
-            flash('Username and password are required', 'error')
-            return render_template('signup.html')
-        
-        if password != confirm_password:
-            flash('Passwords do not match', 'error')
-            return render_template('signup.html')
-        
-        if len(password) < 6:
-            flash('Password must be at least 6 characters', 'error')
-            return render_template('signup.html')
-        
-        # Check if username already exists
-        try:
-            existing = supabase.table('users').select('id').eq('username', username).execute()
-            if existing.data:
-                flash('Username already exists', 'error')
+    try:
+        if request.method == 'POST':
+            username = request.form.get('username')
+            password = request.form.get('password')
+            confirm_password = request.form.get('confirm_password')
+            
+            if not username or not password:
+                flash('Username and password are required', 'error')
                 return render_template('signup.html')
-        except Exception as e:
-            print(f"Error checking username: {e}")
-            flash('Error checking username. Please try again.', 'error')
-            return render_template('signup.html')
+            
+            if password != confirm_password:
+                flash('Passwords do not match', 'error')
+                return render_template('signup.html')
+            
+            if len(password) < 6:
+                flash('Password must be at least 6 characters', 'error')
+                return render_template('signup.html')
+            
+            # Check if username already exists
+            try:
+                existing = supabase.table('users').select('id').eq('username', username).execute()
+                if existing.data:
+                    flash('Username already exists', 'error')
+                    return render_template('signup.html')
+            except Exception as e:
+                print(f"Error checking username: {e}")
+                flash('Error checking username. Please try again.', 'error')
+                return render_template('signup.html')
+            
+            try:
+                # Hash the password
+                hashed_password = generate_password_hash(password)
+                
+                # Insert user directly into users table (let trigger handle discriminator/user_tag)
+                result = supabase.table('users').insert({
+                    'username': username,
+                    'password': hashed_password
+                }).execute()
+                
+                if result.data and len(result.data) > 0:
+                    user = result.data[0]
+                    user_id = user['id']
+                    user_tag = user.get('user_tag', f"{username}#00001")
+                    
+                    # Set session
+                    session['user_id'] = user_id
+                    session['username'] = username
+                    session['user_tag'] = user_tag
+                    
+                    flash('Account created successfully!', 'success')
+                    return redirect(url_for('chat'))
+                else:
+                    flash('Error creating account', 'error')
+                    
+            except Exception as e:
+                print(f"Signup error: {e}")
+                import traceback
+                traceback.print_exc()
+                flash('Error creating account. Please try again.', 'error')
         
-        try:
-            # Hash the password
-            hashed_password = generate_password_hash(password)
-            
-            # Insert user directly into users table (let trigger handle discriminator/user_tag)
-            result = supabase.table('users').insert({
-                'username': username,
-                'password': hashed_password
-            }).execute()
-            
-            if result.data and len(result.data) > 0:
-                user = result.data[0]
-                user_id = user['id']
-                user_tag = user.get('user_tag', f"{username}#00001")
-                
-                # Set session
-                session['user_id'] = user_id
-                session['username'] = username
-                session['user_tag'] = user_tag
-                
-                flash('Account created successfully!', 'success')
-                return redirect(url_for('chat'))
-            else:
-                flash('Error creating account', 'error')
-                
-        except Exception as e:
-            print(f"Signup error: {e}")
-            flash('Error creating account. Please try again.', 'error')
-    
-    return render_template('signup.html')
+        return render_template('signup.html')
+    except Exception as e:
+        print(f"Signup route error: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"Error: {e}", 500
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        
-        if not username or not password:
-            flash('Username and password are required', 'error')
-            return render_template('login.html')
-        
-        try:
-            # Get user from database
-            user_data = supabase.table('users').select('*').eq('username', username).execute()
+    try:
+        if request.method == 'POST':
+            username = request.form.get('username')
+            password = request.form.get('password')
             
-            if user_data.data and len(user_data.data) > 0:
-                user = user_data.data[0]
+            if not username or not password:
+                flash('Username and password are required', 'error')
+                return render_template('login.html')
+            
+            try:
+                # Get user from database
+                user_data = supabase.table('users').select('*').eq('username', username).execute()
                 
-                # Check password hash
-                if check_password_hash(user['password'], password):
-                    session['user_id'] = user['id']
-                    session['username'] = user['username']
-                    session['user_tag'] = user.get('user_tag', f"{username}#00001")
-                    flash('Login successful!', 'success')
-                    return redirect(url_for('chat'))
+                if user_data.data and len(user_data.data) > 0:
+                    user = user_data.data[0]
+                    
+                    # Check password hash
+                    if check_password_hash(user['password'], password):
+                        session['user_id'] = user['id']
+                        session['username'] = user['username']
+                        session['user_tag'] = user.get('user_tag', f"{username}#00001")
+                        flash('Login successful!', 'success')
+                        return redirect(url_for('chat'))
+                    else:
+                        flash('Invalid username or password', 'error')
                 else:
                     flash('Invalid username or password', 'error')
-            else:
-                flash('Invalid username or password', 'error')
-                
-        except Exception as e:
-            print(f"Login error: {e}")
-            flash('Login failed. Please try again.', 'error')
-    
-    return render_template('login.html')
+                    
+            except Exception as e:
+                print(f"Login error: {e}")
+                import traceback
+                traceback.print_exc()
+                flash('Login failed. Please try again.', 'error')
+        
+        return render_template('login.html')
+    except Exception as e:
+        print(f"Login route error: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"Error: {e}", 500
 
 @app.route('/logout')
 @login_required
