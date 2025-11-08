@@ -323,9 +323,22 @@ function displayMessage(message) {
     
     const messagesContainer = document.getElementById('messages');
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${message.sender_id === CURRENT_USER_ID ? 'sent' : 'received'}`;
+    messageDiv.className = `message ${message.sender_id === CURRENT_USER_ID ? 'sent' : 'received'} message-hoverable`;
+    messageDiv.dataset.messageId = message.id;
     
     let content = '';
+    
+    // Build reply preview if this message is replying to another
+    if (message.replied_to) {
+        const repliedContent = escapeHtml(message.replied_to.content || '').substring(0, 50);
+        const repliedSender = message.replied_to.sender?.username || 'Unknown';
+        content += `
+            <div class="reply-preview">
+                <div class="reply-preview-sender">${repliedSender}</div>
+                <div class="reply-preview-text">${repliedContent}${message.replied_to.content?.length > 50 ? '...' : ''}</div>
+            </div>
+        `;
+    }
     
     if (message.file_url) {
         if (message.file_type && message.file_type.startsWith('image')) {
@@ -346,7 +359,49 @@ function displayMessage(message) {
         content += `<span class="timestamp">${timestamp}</span>`;
     }
     
-    messageDiv.innerHTML = `<div class="message-content">${content}</div>`;
+    const safeContent = message.content ? escapeHtml(message.content).replace(/`/g, '\\`').replace(/'/g, "\\'") : '';
+    const isSent = message.sender_id === CURRENT_USER_ID;
+    
+    messageDiv.innerHTML = `
+        ${!isSent ? `
+            <div class="message-content">${content}</div>
+            <div class="message-actions">
+                <button class="message-action-btn reply-btn" onclick="setReplyTo('${message.id}', 'DM', \`${safeContent}\`)" title="Reply">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="9 14 4 9 9 4"></polyline>
+                        <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
+                    </svg>
+                </button>
+                <button class="message-action-btn emoji-btn" onclick="showEmojiPicker(event)" title="React">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                        <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                        <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                    </svg>
+                </button>
+            </div>
+        ` : `
+            <div class="message-actions">
+                <button class="message-action-btn emoji-btn" onclick="showEmojiPicker(event)" title="React">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                        <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                        <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                    </svg>
+                </button>
+                <button class="message-action-btn reply-btn" onclick="setReplyTo('${message.id}', 'DM', \`${safeContent}\`)" title="Reply">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="9 14 4 9 9 4"></polyline>
+                        <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="message-content">${content}</div>
+        `}
+    `;
+    
     messagesContainer.appendChild(messageDiv);
     
     // Update last timestamp
@@ -387,10 +442,17 @@ function initMessageForm() {
             console.log('Sending server message:', { server_id: currentServerId, content });
             
             // Send via WebSocket
-            socket.emit('server_message', {
+            const messageData = {
                 server_id: currentServerId,
                 content: content
-            });
+            };
+            
+            // Include reply_to_id if replying
+            if (replyingTo) {
+                messageData.reply_to_id = replyingTo.id;
+            }
+            
+            socket.emit('server_message', messageData);
             
             messageInput.value = '';
             return;
@@ -410,6 +472,11 @@ function initMessageForm() {
             formData.append('file', selectedFile);
         }
         
+        // Include reply_to_id if replying
+        if (replyingTo) {
+            formData.append('reply_to_id', replyingTo.id);
+        }
+        
         try {
             const response = await fetch('/api/send_message', {
                 method: 'POST',
@@ -423,6 +490,11 @@ function initMessageForm() {
                 selectedFile = null;
                 filePreview.innerHTML = '';
                 fileInput.value = '';
+                
+                // Clear reply state
+                if (replyingTo) {
+                    cancelReply();
+                }
             } else {
                 alert('Failed to send message: ' + (data.error || 'Unknown error'));
             }
@@ -543,6 +615,7 @@ themeSwitcher.addEventListener('click', () => {
 document.addEventListener('DOMContentLoaded', () => {
     initSocket();
     initMessageForm();
+    initEmojiPicker();
     
     // Load friends list into sidebar
     loadFriendsToSidebar();
@@ -1578,6 +1651,9 @@ async function loadServerMessages(serverId) {
     }
 }
 
+// Track current reply state
+let replyingTo = null;
+
 // Display a server message
 function displayServerMessage(message) {
     if (displayedMessageIds.has(message.id)) {
@@ -1593,26 +1669,223 @@ function displayServerMessage(message) {
     const isOwnMessage = (senderId && senderId === CURRENT_USER_ID) || message.is_own_message;
 
     const senderName = senderInfo.username || (isOwnMessage ? CURRENT_USERNAME : 'Unknown');
-    const senderInitial = senderName ? senderName.charAt(0).toUpperCase() : '?';
 
-    messageDiv.className = `message server-message ${isOwnMessage ? 'sent' : 'received'}`;
+    messageDiv.className = `message server-message ${isOwnMessage ? 'sent' : 'received'} message-hoverable`;
+    messageDiv.dataset.messageId = message.id;
 
     const timeString = formatToISTTime(message.created_at);
     const safeContent = escapeHtml(message.content || '').replace(/\n/g, '<br>');
-    const headerClass = `server-message-header${isOwnMessage ? ' align-right' : ''}`;
-
-    messageDiv.innerHTML = `
-        ${!isOwnMessage ? `<div class="server-message-avatar">${senderInitial}</div>` : ''}
-        <div class="message-content server-message-bubble">
-            <div class="${headerClass}">
-                <span class="server-message-sender">${senderName}</span>
-                <span class="server-message-time">${timeString}</span>
+    
+    // Build reply preview if this message is replying to another
+    let replyPreviewHtml = '';
+    if (message.replied_to) {
+        const repliedContent = escapeHtml(message.replied_to.content || '').substring(0, 50);
+        const repliedSender = message.replied_to.sender?.username || 'Unknown';
+        replyPreviewHtml = `
+            <div class="reply-preview">
+                <div class="reply-preview-sender">${repliedSender}</div>
+                <div class="reply-preview-text">${repliedContent}${message.replied_to.content?.length > 50 ? '...' : ''}</div>
             </div>
-            <div class="server-message-text">${safeContent}</div>
-        </div>
-    `;
+        `;
+    }
+    
+    const escapedContent = safeContent.replace(/`/g, '\\`').replace(/'/g, "\\'");
+
+    if (isOwnMessage) {
+        // Sent messages: clean bubble without sender info (WhatsApp style)
+        messageDiv.innerHTML = `
+            <div class="message-actions">
+                <button class="message-action-btn emoji-btn" onclick="showEmojiPicker(event)" title="React">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                        <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                        <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                    </svg>
+                </button>
+                <button class="message-action-btn reply-btn" onclick="setReplyTo('${message.id}', '${senderName}', \`${escapedContent}\`)" title="Reply">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="9 14 4 9 9 4"></polyline>
+                        <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="message-content server-message-bubble">
+                ${replyPreviewHtml}
+                <div class="server-message-text">${safeContent}</div>
+                <span class="server-message-time align-right">${timeString}</span>
+            </div>
+        `;
+    } else {
+        // Received messages: show sender name only (no avatar)
+        messageDiv.innerHTML = `
+            <div class="message-content server-message-bubble">
+                ${replyPreviewHtml}
+                <div class="server-message-header">
+                    <span class="server-message-sender">${senderName}</span>
+                    <span class="server-message-time">${timeString}</span>
+                </div>
+                <div class="server-message-text">${safeContent}</div>
+            </div>
+            <div class="message-actions">
+                <button class="message-action-btn reply-btn" onclick="setReplyTo('${message.id}', '${senderName}', \`${escapedContent}\`)" title="Reply">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="9 14 4 9 9 4"></polyline>
+                        <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
+                    </svg>
+                </button>
+                <button class="message-action-btn emoji-btn" onclick="showEmojiPicker(event)" title="React">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                        <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                        <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                    </svg>
+                </button>
+            </div>
+        `;
+    }
 
     messagesContainer.appendChild(messageDiv);
+}
+
+// Show reply option on right-click
+function showReplyOption(event, messageId, senderName, content) {
+    event.preventDefault();
+    setReplyTo(messageId, senderName, content);
+}
+
+// Set reply target
+function setReplyTo(messageId, senderName, content) {
+    replyingTo = { id: messageId, sender: senderName, content: content };
+    
+    // Show reply bar
+    const replyBar = document.getElementById('replyBar') || createReplyBar();
+    const replyText = content.replace(/<br>/g, ' ').substring(0, 50);
+    replyBar.innerHTML = `
+        <div class="reply-bar-content">
+            <div class="reply-bar-label">Replying to ${senderName}</div>
+            <div class="reply-bar-text">${replyText}${content.length > 50 ? '...' : ''}</div>
+        </div>
+        <button class="reply-bar-close" onclick="cancelReply()">×</button>
+    `;
+    replyBar.style.display = 'flex';
+    document.getElementById('messageInput').focus();
+}
+
+// Create reply bar element if it doesn't exist
+function createReplyBar() {
+    const replyBar = document.createElement('div');
+    replyBar.id = 'replyBar';
+    replyBar.className = 'reply-bar';
+    const inputContainer = document.getElementById('messageInputContainer');
+    inputContainer.insertBefore(replyBar, inputContainer.firstChild);
+    return replyBar;
+}
+
+// Cancel reply
+function cancelReply() {
+    replyingTo = null;
+    const replyBar = document.getElementById('replyBar');
+    if (replyBar) {
+        replyBar.style.display = 'none';
+    }
+}
+
+// Emoji picker functionality
+const commonEmojis = [
+    '😀', '�', '😄', '😁', '😆', '😅', '🤣', '�😂', '�', '🙃',
+    '😉', '😊', '😇', '🥰', '�', '🤩', '😘', '😗', '😚', '😙',
+    '😋', '😛', '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔',
+    '🤐', '🤨', '😐', '😑', '😶', '😏', '😒', '🙄', '😬', '🤥',
+    '😌', '😔', '😪', '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮',
+    '🤧', '🥵', '🥶', '🥴', '😵', '🤯', '🤠', '🥳', '😎', '🤓',
+    '🧐', '😕', '😟', '🙁', '☹️', '😮', '😯', '😲', '😳', '�',
+    '😦', '😧', '😨', '😰', '😥', '😢', '😭', '😱', '😖', '😣',
+    '😞', '😓', '😩', '😫', '🥱', '😤', '😡', '😠', '🤬', '😈',
+    '👿', '💀', '☠️', '💩', '🤡', '👹', '👺', '👻', '👽', '👾',
+    '🤖', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾',
+    '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔',
+    '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️',
+    '✝️', '☪️', '🕉️', '☸️', '✡️', '🔯', '🕎', '☯️', '☦️', '🛐',
+    '⛎', '♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐',
+    '♑', '♒', '♓', '🆔', '⚛️', '🉑', '☢️', '☣️', '📴', '📳',
+    '🈶', '🈚', '🈸', '🈺', '🈷️', '✴️', '🆚', '💮', '🉐', '㊙️',
+    '㊗️', '🈴', '🈵', '🈹', '🈲', '🅰️', '🅱️', '🆎', '🆑', '🅾️',
+    '🆘', '❌', '⭕', '�', '⛔', '📛', '🚫', '💯', '💢', '♨️',
+    '🚷', '🚯', '🚳', '🚱', '🔞', '📵', '🚭', '❗', '❕', '❓',
+    '❔', '‼️', '⁉️', '🔅', '🔆', '〽️', '⚠️', '🚸', '🔱', '⚜️',
+    '🔰', '♻️', '✅', '🈯', '💹', '❇️', '✳️', '❎', '🌐', '💠',
+    '🔷', '🔶', '🔹', '🔸', '🔺', '🔻', '💠', '🔘', '🔲', '🔳',
+    '⚪', '⚫', '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '🟤', '⚽',
+    '🏀', '🏈', '⚾', '🥎', '🎾', '🏐', '🏉', '🥏', '🎱', '🪀',
+    '🏓', '🏸', '🏒', '🏑', '🥍', '🏏', '🥅', '⛳', '🪁', '🏹',
+    '🎣', '🤿', '🥊', '🥋', '🎽', '🛹', '🛷', '⛸️', '🥌', '🎿',
+    '⛷️', '🏂', '🪂', '🏋️', '🤼', '🤸', '🤺', '⛹️', '🤾', '🏌️',
+    '🏇', '🧘', '🏊', '🏄', '🏆', '🥇', '🥈', '🥉', '🏅', '🎖️',
+    '🎗️', '🏵️', '🎫', '🎟️', '🎪', '🎭', '🎨', '🎬', '🎤', '🎧',
+    '🎼', '🎹', '🥁', '🎷', '🎺', '🎸', '🪕', '🎻', '🎲', '♟️',
+    '🎯', '🎳', '🎮', '🎰', '🧩', '�👍', '👎', '👊', '✊', '🤛',
+    '🤜', '🤞', '✌️', '🤟', '🤘', '👌', '🤌', '🤏', '👈', '👉',
+    '👆', '👇', '☝️', '✋', '🤚', '🖐️', '🖖', '👋', '🤙', '💪',
+    '🦾', '🖕', '✍️', '🙏', '🦶', '🦵', '🦿', '💄', '💋', '👄',
+    '🦷', '👅', '👂', '🦻', '👃', '👣', '👁️', '👀', '🧠', '🫀',
+    '🫁', '🦴', '👤', '👥', '🗣️', '👶', '👧', '🧒', '👦', '👩',
+    '🧑', '👨', '👩‍🦱', '🧑‍🦱', '👨‍🦱', '👩‍🦰', '🧑‍🦰', '👨‍🦰', '👱‍♀️', '👱',
+    '🔥', '✨', '🌟', '💫', '⭐', '🌈', '☀️', '🌤️', '⛅', '🌥️',
+    '☁️', '🌦️', '🌧️', '⛈️', '🌩️', '🌨️', '❄️', '☃️', '⛄', '�️',
+    '�', '�', '�', '☔', '🌊', '🌫️', '🎉', '🎊', '🎈', '🎀',
+    '🎁', '🎄', '🎃', '🎇', '🧨', '✨', '🎆', '🎐', '🎏', '🎎',
+    '🎑', '🎍', '🎋', '🎗️', '🥇', '🥈', '🥉', '🏅', '🎖️', '🏆'
+];
+
+function initEmojiPicker() {
+    const emojiPickerBtn = document.getElementById('emojiPickerBtn');
+    const emojiPicker = document.getElementById('emojiPicker');
+    const messageInput = document.getElementById('messageInput');
+    
+    if (!emojiPickerBtn || !emojiPicker) return;
+    
+    // Build emoji picker
+    let emojiHTML = '<div class="emoji-grid">';
+    commonEmojis.forEach(emoji => {
+        emojiHTML += `<button type="button" class="emoji-item" data-emoji="${emoji}">${emoji}</button>`;
+    });
+    emojiHTML += '</div>';
+    emojiPicker.innerHTML = emojiHTML;
+    
+    // Toggle emoji picker
+    emojiPickerBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'block' : 'none';
+    });
+    
+    // Insert emoji on click
+    emojiPicker.addEventListener('click', (e) => {
+        if (e.target.classList.contains('emoji-item')) {
+            const emoji = e.target.dataset.emoji;
+            const cursorPos = messageInput.selectionStart;
+            const textBefore = messageInput.value.substring(0, cursorPos);
+            const textAfter = messageInput.value.substring(cursorPos);
+            messageInput.value = textBefore + emoji + textAfter;
+            messageInput.focus();
+            messageInput.selectionStart = messageInput.selectionEnd = cursorPos + emoji.length;
+            emojiPicker.style.display = 'none';
+        }
+    });
+    
+    // Close emoji picker when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!emojiPickerBtn.contains(e.target) && !emojiPicker.contains(e.target)) {
+            emojiPicker.style.display = 'none';
+        }
+    });
+}
+
+function showEmojiPicker(event) {
+    event.stopPropagation();
+    // For message reactions - you can implement this later
+    console.log('Emoji reaction button clicked');
 }
 
 // Helper function to escape HTML
