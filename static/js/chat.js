@@ -9,17 +9,25 @@ const messageForm = document.getElementById('messageForm');
 const messagesContainer = document.getElementById('messages');
 
 let selectedFile = null;
+const displayedMessageIds = new Set(Array.isArray(INITIAL_MESSAGE_IDS) ? INITIAL_MESSAGE_IDS : []);
+let latestTimestamp = INITIAL_LAST_TIMESTAMP || null;
 
 // File selection
-fileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) {
-        selectedFile = file;
-        showFilePreview(file);
-    }
-});
+if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            selectedFile = file;
+            showFilePreview(file);
+        }
+    });
+}
 
 function showFilePreview(file) {
+    if (!filePreview) {
+        return;
+    }
+
     filePreview.classList.add('active');
     
     if (file.type.startsWith('image/')) {
@@ -45,53 +53,84 @@ function showFilePreview(file) {
 }
 
 function clearFilePreview() {
-    filePreview.classList.remove('active');
-    filePreview.innerHTML = '';
-    fileInput.value = '';
+    if (filePreview) {
+        filePreview.classList.remove('active');
+        filePreview.innerHTML = '';
+    }
+
+    if (fileInput) {
+        fileInput.value = '';
+    }
+
     selectedFile = null;
 }
 
 // Send message
-messageForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const content = messageInput.value.trim();
-    
-    if (!content && !selectedFile) {
-        return;
-    }
-    
-    const formData = new FormData();
-    formData.append('receiver_id', FRIEND_ID);
-    
-    if (content) {
-        formData.append('content', content);
-    }
-    
-    if (selectedFile) {
-        formData.append('file', selectedFile);
-    }
-    
-    try {
-        const response = await fetch('/api/send_message', {
-            method: 'POST',
-            body: formData
-        });
-        
-        if (response.ok) {
-            messageInput.value = '';
-            clearFilePreview();
-        } else {
-            alert('Failed to send message');
+if (messageForm) {
+    messageForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const content = messageInput.value.trim();
+
+        if (!content && !selectedFile) {
+            return;
         }
-    } catch (error) {
-        console.error('Error sending message:', error);
-        alert('Error sending message');
-    }
-});
+
+        if (!FRIEND_ID) {
+            alert('No recipient selected');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('receiver_id', FRIEND_ID);
+
+        if (content) {
+            formData.append('content', content);
+        }
+
+        if (selectedFile) {
+            formData.append('file', selectedFile);
+        }
+
+        try {
+            const response = await fetch('/api/send_message', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                messageInput.value = '';
+                clearFilePreview();
+                if (result.message) {
+                    displayMessage(result.message);
+                }
+            } else {
+                alert('Failed to send message');
+            }
+        } catch (error) {
+            console.error('Error sending message:', error);
+            alert('Error sending message');
+        }
+    });
+}
 
 // Display message in UI
 function displayMessage(message) {
+    if (!message) {
+        return;
+    }
+
+    if (message.id && displayedMessageIds.has(message.id)) {
+        updateLatestTimestamp(message);
+        return;
+    }
+
+    if (!messagesContainer) {
+        return;
+    }
+
     const messageDiv = document.createElement('div');
     messageDiv.className = message.sender_id === CURRENT_USER_ID ? 'message sent' : 'message received';
     
@@ -118,6 +157,11 @@ function displayMessage(message) {
     messageDiv.innerHTML = contentHTML;
     messagesContainer.appendChild(messageDiv);
     scrollToBottom();
+
+    if (message.id) {
+        displayedMessageIds.add(message.id);
+    }
+    updateLatestTimestamp(message);
 }
 
 // Utility functions
@@ -137,24 +181,81 @@ function scrollToBottom() {
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
+function updateLatestTimestamp(message) {
+    if (!message || !message.created_at) {
+        return;
+    }
+
+    if (!latestTimestamp) {
+        latestTimestamp = message.created_at;
+        return;
+    }
+
+    const currentLast = new Date(latestTimestamp);
+    const candidate = new Date(message.created_at);
+
+    if (candidate > currentLast) {
+        latestTimestamp = message.created_at;
+    }
+}
+
+async function fetchNewMessages() {
+    if (!FRIEND_ID) {
+        return;
+    }
+
+    try {
+        const params = new URLSearchParams({ friend_id: FRIEND_ID });
+        if (latestTimestamp) {
+            params.append('since', latestTimestamp);
+        }
+
+        const response = await fetch(`/api/messages?${params.toString()}`, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            cache: 'no-store'
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success && Array.isArray(result.messages)) {
+            result.messages.forEach((msg) => displayMessage(msg));
+        }
+    } catch (error) {
+        console.error('Error fetching new messages:', error);
+    }
+}
+
 // Socket.IO events
 socket.on('connect', () => {
     console.log('Connected to server');
-    socket.emit('join', { user_id: CURRENT_USER_ID });
+    if (typeof CURRENT_USER_ID !== 'undefined' && CURRENT_USER_ID) {
+        socket.emit('join', { user_id: CURRENT_USER_ID });
+        console.log('Joined room for user:', CURRENT_USER_ID);
+    }
+});
+
+socket.on('disconnect', () => {
+    console.log('Disconnected from server');
 });
 
 socket.on('new_message', (data) => {
+    console.log('📩 New message received from friend:', data);
     displayMessage(data.message);
 });
 
 socket.on('message_sent', (data) => {
+    console.log('✅ Message sent successfully:', data);
     displayMessage(data.message);
 });
 
 // Scroll to bottom on load
 window.addEventListener('load', () => {
     scrollToBottom();
+    fetchNewMessages();
 });
+
+setInterval(fetchNewMessages, 2500);
 
 // --- Theme Switcher Logic ---
 document.addEventListener('DOMContentLoaded', () => {
