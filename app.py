@@ -233,6 +233,18 @@ def send_message():
         message = message_response.data[0] if message_response.data else None
         
         if message:
+            # Enrich message with replied_to data if present
+            if message.get('reply_to_id'):
+                replied_msg_response = supabase.table('direct_messages').select('content, sender_id').eq('id', message['reply_to_id']).execute()
+                if replied_msg_response.data:
+                    replied_msg = replied_msg_response.data[0]
+                    sender_response = supabase.table('users').select('username').eq('id', replied_msg['sender_id']).execute()
+                    if sender_response.data:
+                        message['replied_to'] = {
+                            'content': replied_msg['content'],
+                            'sender': {'username': sender_response.data[0]['username']}
+                        }
+            
             # Emit via SocketIO for real-time delivery
             socketio.emit('new_message', {'message': message}, room=receiver_id)
             socketio.emit('message_sent', {'message': message}, room=session['user_id'])
@@ -347,6 +359,7 @@ def handle_server_message(data):
     """Handle server message via WebSocket"""
     server_id = data.get('server_id')
     content = data.get('content', '').strip()
+    reply_to_id = data.get('reply_to_id')  # Get reply_to_id if present
     
     if not server_id or not content:
         emit('error', {'message': 'Invalid message data'})
@@ -373,7 +386,8 @@ def handle_server_message(data):
         message_data = {
             'server_id': server_id,
             'sender_id': user_id,
-            'content': content
+            'content': content,
+            'reply_to_id': reply_to_id if reply_to_id else None  # Include reply_to_id
         }
         
         result = supabase.table('server_messages').insert(message_data).execute()
@@ -393,6 +407,18 @@ def handle_server_message(data):
                 'sender': sender.data[0] if sender.data else None,
                 'server_id': server_id
             }
+            
+            # Enrich message with replied_to data if present
+            if msg.get('reply_to_id'):
+                replied_msg_response = supabase.table('server_messages').select('content, sender_id').eq('id', msg['reply_to_id']).execute()
+                if replied_msg_response.data:
+                    replied_msg = replied_msg_response.data[0]
+                    sender_response = supabase.table('users').select('username').eq('id', replied_msg['sender_id']).execute()
+                    if sender_response.data:
+                        message_info['replied_to'] = {
+                            'content': replied_msg['content'],
+                            'sender': {'username': sender_response.data[0]['username']}
+                        }
             
             # Broadcast to all members in the server room
             emit('new_server_message', message_info, room=f"server_{server_id}")

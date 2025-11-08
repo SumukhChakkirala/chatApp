@@ -1497,52 +1497,62 @@ body.dark-mode .reply-bar-close:hover {
     background: rgba(255, 255, 255, 0.1);
 }
 
-/* Reply preview shown in messages (the quoted message) */
+/* Reply preview shown in messages (the quoted message) - WhatsApp/Instagram style */
 .reply-preview {
-    background: rgba(0, 0, 0, 0.15);
-    border-left: 3px solid var(--primary-color);
-    padding: 8px 12px;
-    margin-bottom: 8px;
+    background: linear-gradient(to right, rgba(37, 211, 102, 0.08), rgba(37, 211, 102, 0.03));
+    border-left: 4px solid #25d366;
+    padding: 10px 14px;
+    margin-bottom: 10px;
     border-radius: 8px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(10px);
 }
 
 body.dark-mode .reply-preview {
-    background: rgba(255, 255, 255, 0.15);
-    border-left: 3px solid var(--primary-color);
+    background: linear-gradient(to right, rgba(37, 211, 102, 0.12), rgba(37, 211, 102, 0.04));
+    border-left: 4px solid #25d366;
 }
 
 .reply-preview:hover {
-    background: rgba(0, 0, 0, 0.2);
+    background: linear-gradient(to right, rgba(37, 211, 102, 0.15), rgba(37, 211, 102, 0.06));
+    transform: translateX(2px);
 }
 
 body.dark-mode .reply-preview:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: linear-gradient(to right, rgba(37, 211, 102, 0.18), rgba(37, 211, 102, 0.08));
 }
 
 .reply-preview-sender {
     font-size: 13px;
-    font-weight: 600;
-    color: var(--primary-color);
-    margin-bottom: 4px;
+    font-weight: 700;
+    color: #25d366;
+    margin-bottom: 5px;
+    letter-spacing: 0.3px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+body.dark-mode .reply-preview-sender {
+    color: #2ce573;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .reply-preview-text {
-    font-size: 14px;
-    color: var(--text-primary);
+    font-size: 13.5px;
+    color: #4a5568;
     overflow: hidden;
     text-overflow: ellipsis;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
-    line-height: 1.4;
-    opacity: 0.85;
+    line-height: 1.5;
+    opacity: 0.95;
+    font-weight: 500;
 }
 
 body.dark-mode .reply-preview-text {
-    color: var(--text-primary);
-    opacity: 0.8;
+    color: #cbd5e0;
+    opacity: 0.9;
 }
 
 /* Responsive Design */
