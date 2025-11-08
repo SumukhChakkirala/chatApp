@@ -7,7 +7,19 @@ from config import Config
 from functools import wraps
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
+online_users = set()
+def to_ist(utc_str):
+    if not utc_str:
+        return ''
+    try:
+        # Parse ISO format (e.g., '2023-11-08T14:30:00')
+        dt = datetime.fromisoformat(utc_str)
+        # Add 5 hours 30 minutes for IST
+        ist_dt = dt + timedelta(hours=5, minutes=30)
+        return ist_dt.strftime('%d-%m-%Y %I:%M %p')  # e.g., 08-11-2023 08:00 PM
+    except Exception:
+        return utc_str
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -158,12 +170,17 @@ def chat():
                 f"and(sender_id.eq.{session['user_id']},receiver_id.eq.{friend['id']}),and(sender_id.eq.{friend['id']},receiver_id.eq.{session['user_id']})"
             ).order('created_at', desc=False).execute()
             messages = messages_response.data
-        
+
+            # Add this block to convert timestamps to IST
+            for msg in messages:
+                msg['created_at_ist'] = to_ist(msg.get('created_at'))
+
         return render_template('chat.html', 
-                             current_user={'id': session['user_id'], 'username': session['username']},
-                             friend_id=friend['id'] if friend else '',
-                             friend_name=friend['username'] if friend else 'No users',
-                             messages=messages)
+            current_user={'id': session['user_id'], 'username': session['username']},
+            friend_id=friend['id'] if friend else '',
+            friend_name=friend['username'] if friend else 'No users',
+            messages=messages
+            )
     except Exception as e:
         print(f"Chat error: {e}")
         flash('Error loading chat', 'error')
@@ -279,6 +296,22 @@ def handle_join(data):
     if user_id:
         join_room(user_id)
         print(f"User {user_id} joined their room")
+
+
+@socketio.on('user_online')
+def handle_user_online(data):
+    user_id = data.get('user_id')
+    if user_id:
+        online_users.add(user_id)
+        socketio.emit('presence_update', {'online_users': list(online_users)})
+
+@socketio.on('user_offline')
+def handle_user_offline(data):
+    user_id = data.get('user_id')
+    if user_id:
+        online_users.discard(user_id)
+        socketio.emit('presence_update', {'online_users': list(online_users)})
+
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)

@@ -1,6 +1,31 @@
 // Initialize Socket.IO connection
 const socket = io();
 
+window.addEventListener('load', () => {
+    socket.emit('user_online', { user_id: CURRENT_USER_ID });
+});
+
+window.addEventListener('beforeunload', () => {
+    socket.emit('user_offline', { user_id: CURRENT_USER_ID });
+});
+
+// Listen for presence updates and update the Online label
+socket.on('presence_update', (data) => {
+    const statusElem = document.querySelector('.chat-header-info .status');
+    if (!statusElem) return;
+    if (data.online_users.includes(FRIEND_ID)) {
+        statusElem.textContent = 'Online';
+    } else {
+        statusElem.textContent = '';
+    }
+});
+
+socket.on('connect', () => {
+    if (typeof CURRENT_USER_ID !== 'undefined' && CURRENT_USER_ID) {
+        socket.emit('join', { user_id: CURRENT_USER_ID });
+    }
+});
+
 // File preview handling
 const fileInput = document.getElementById('fileInput');
 const filePreview = document.getElementById('filePreview');
@@ -150,8 +175,8 @@ function displayMessage(message) {
         contentHTML += `<p>${escapeHtml(message.content)}</p>`;
     }
     
-    const timestamp = new Date(message.created_at);
-    contentHTML += `<span class="timestamp">${formatTime(timestamp)}</span>`;
+    const istTime = utcToIST(message.created_at);
+    contentHTML += `<span class="timestamp">${istTime}</span>`;
     contentHTML += '</div>';
     
     messageDiv.innerHTML = contentHTML;
@@ -292,3 +317,14 @@ document.addEventListener('DOMContentLoaded', () => {
         applyTheme(initialTheme);
     }
 });
+
+function utcToIST(utcString) {
+    if (!utcString) return '';
+    const utcDate = new Date(utcString);
+    // IST is UTC + 5:30
+    utcDate.setHours(utcDate.getHours() + 5);
+    utcDate.setMinutes(utcDate.getMinutes() + 30);
+    // Format: DD-MM-YYYY hh:mm AM/PM
+    const options = { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true };
+    return utcDate.toLocaleString('en-IN', options);
+}
