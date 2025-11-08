@@ -593,3 +593,12 @@ body {
     margin-bottom: 15px;
     font-size: 1.1em;
 }
+
+body.dark-mode .contact.active .contact-info h3 {
+    color: #111 !important;
+}
+
+body.dark-mode #messageInput {
+    color: #fff;
+    background: #222;
+}
