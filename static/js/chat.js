@@ -1,6 +1,14 @@
 // Initialize Socket.IO connection
 const socket = io();
 
+window.addEventListener('load', () => {
+    socket.emit('user_online', { user_id: CURRENT_USER_ID });
+});
+
+window.addEventListener('beforeunload', () => {
+    socket.emit('user_offline', { user_id: CURRENT_USER_ID });
+});
+
 // File preview handling
 const fileInput = document.getElementById('fileInput');
 const filePreview = document.getElementById('filePreview');
