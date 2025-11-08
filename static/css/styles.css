@@ -1432,6 +1432,93 @@ body.dark-mode .emoji-picker-footer {
     }
 }
 
+/* --- Message Action Buttons (WhatsApp-style) --- */
+
+.message-hoverable {
+    position: relative;
+}
+
+.message-actions {
+    display: none;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+}
+
+.message.sent .message-actions {
+    left: 8px;
+}
+
+.message.received .message-actions {
+    right: 8px;
+}
+
+.message-hoverable:hover .message-actions {
+    display: flex;
+    gap: 6px;
+    animation: slideIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-50%) scale(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(-50%) scale(1);
+    }
+}
+
+.message-action-btn {
+    background: linear-gradient(135deg, rgba(37, 211, 102, 0.95), rgba(34, 197, 94, 0.95));
+    border: none;
+    padding: 6px 12px;
+    border-radius: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 3px 10px rgba(37, 211, 102, 0.35);
+    color: white;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.3px;
+    backdrop-filter: blur(10px);
+    white-space: nowrap;
+}
+
+body.dark-mode .message-action-btn {
+    background: linear-gradient(135deg, rgba(37, 211, 102, 0.9), rgba(34, 197, 94, 0.9));
+    box-shadow: 0 3px 12px rgba(37, 211, 102, 0.4);
+}
+
+.message-action-btn:hover {
+    background: linear-gradient(135deg, #25d366, #22c55e);
+    transform: translateY(-2px) scale(1.08);
+    box-shadow: 0 5px 18px rgba(37, 211, 102, 0.55);
+}
+
+body.dark-mode .message-action-btn:hover {
+    box-shadow: 0 5px 20px rgba(37, 211, 102, 0.65);
+}
+
+.message-action-btn:active {
+    transform: translateY(0) scale(0.98);
+}
+
+.message-action-btn svg {
+    stroke: white;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
+    flex-shrink: 0;
+}
+
+.reply-btn-text {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
 /* --- Reply Styles (WhatsApp/Instagram-style) --- */
 
 /* Reply bar shown when composing a reply */
