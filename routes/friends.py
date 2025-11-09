@@ -12,6 +12,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
 from supabase import create_client, Client
+from supabase_helper import get_data
 
 # Initialize Supabase client
 supabase: Client = create_client(Config.SUPABASE_URL, Config.SUPABASE_KEY)
@@ -44,11 +45,12 @@ def send_friend_request():
         
         # Find receiver by user_tag
         receiver_response = supabase.table('users').select('id').eq('user_tag', receiver_user_tag).execute()
+        receiver_data = get_data(receiver_response)
         
-        if not receiver_response.data:
+        if not receiver_data:
             return jsonify({'success': False, 'error': 'User not found'}), 404
         
-        receiver_id = receiver_response.data[0]['id']
+        receiver_id = receiver_data[0]['id']
         
         # Check if trying to send request to self
         if sender_id == receiver_id:
@@ -56,7 +58,7 @@ def send_friend_request():
         
         # Check if already friends
         friends_check = supabase.rpc('are_friends', {'uid1': sender_id, 'uid2': receiver_id}).execute()
-        if friends_check.data:
+        if get_data(friends_check):
             return jsonify({'success': False, 'error': 'Already friends'}), 400
         
         # Check if request already exists
@@ -65,9 +67,9 @@ def send_friend_request():
             .eq('sender_id', sender_id).eq('receiver_id', receiver_id).execute()
         req2 = supabase.table('friend_requests').select('*') \
             .eq('sender_id', receiver_id).eq('receiver_id', sender_id).execute()
-        existing_request = {'data': (req1.data or []) + (req2.data or [])}
+        existing_request = {'data': (get_data(req1) or []) + (get_data(req2) or [])}
         
-        if existing_request.data:
+        if existing_request['data']:
             return jsonify({'success': False, 'error': 'Friend request already exists'}), 400
         
         # Create friend request
@@ -78,11 +80,12 @@ def send_friend_request():
         }
         
         result = supabase.table('friend_requests').insert(request_data).execute()
+        result_data = get_data(result)
         
-        if result.data:
+        if result_data:
             return jsonify({
                 'success': True,
-                'request_id': result.data[0]['id'],
+                'request_id': result_data[0]['id'],
                 'message': 'Friend request sent successfully'
             }), 200
         else:
@@ -107,14 +110,16 @@ def get_pending_requests():
         
         # Get sender details for incoming requests
         incoming = []
-        if incoming_requests.data:
-            for req in incoming_requests.data:
+        incoming_data = get_data(incoming_requests)
+        if incoming_data:
+            for req in incoming_data:
                 sender = supabase.table('users').select('id, username, user_tag').eq('id', req['sender_id']).execute()
-                if sender.data:
+                sender_data = get_data(sender)
+                if sender_data:
                     incoming.append({
                         'id': req['id'],
                         'created_at': req['created_at'],
-                        'sender': sender.data[0]
+                        'sender': sender_data[0]
                     })
         
         # Get outgoing requests (where current user is sender)
@@ -124,14 +129,16 @@ def get_pending_requests():
         
         # Get receiver details for outgoing requests
         outgoing = []
-        if outgoing_requests.data:
-            for req in outgoing_requests.data:
+        outgoing_data = get_data(outgoing_requests)
+        if outgoing_data:
+            for req in outgoing_data:
                 receiver = supabase.table('users').select('id, username, user_tag').eq('id', req['receiver_id']).execute()
-                if receiver.data:
+                receiver_data = get_data(receiver)
+                if receiver_data:
                     outgoing.append({
                         'id': req['id'],
                         'created_at': req['created_at'],
-                        'receiver': receiver.data[0]
+                        'receiver': receiver_data[0]
                     })
         
         return jsonify({
@@ -156,11 +163,12 @@ def accept_friend_request(request_id):
         
         # Get the friend request
         friend_request = supabase.table('friend_requests').select('*').eq('id', request_id).execute()
+        request_data_list = get_data(friend_request)
         
-        if not friend_request.data:
+        if not request_data_list:
             return jsonify({'success': False, 'error': 'Friend request not found'}), 404
         
-        request_data = friend_request.data[0]
+        request_data = request_data_list[0]
         
         # Verify the current user is the receiver
         if request_data['receiver_id'] != user_id:
@@ -193,11 +201,12 @@ def reject_friend_request(request_id):
         
         # Get the friend request
         friend_request = supabase.table('friend_requests').select('*').eq('id', request_id).execute()
+        request_data_list = get_data(friend_request)
         
-        if not friend_request.data:
+        if not request_data_list:
             return jsonify({'success': False, 'error': 'Friend request not found'}), 404
         
-        request_data = friend_request.data[0]
+        request_data = request_data_list[0]
         
         # Verify the current user is the receiver
         if request_data['receiver_id'] != user_id:
@@ -236,7 +245,7 @@ def get_friends():
         # Query both directions (user as user1 or user2) and merge results
         f1 = supabase.table('friendships').select('*').eq('user1_id', user_id).execute()
         f2 = supabase.table('friendships').select('*').eq('user2_id', user_id).execute()
-        merged_friendships = (f1.data or []) + (f2.data or [])
+        merged_friendships = (get_data(f1) or []) + (get_data(f2) or [])
 
         print(f"Found {len(merged_friendships)} friendships")
 
@@ -247,9 +256,10 @@ def get_friends():
 
             # Get friend's details
             friend_data = supabase.table('users').select('id, username, user_tag').eq('id', friend_id).execute()
-            if friend_data.data:
+            friend_list = get_data(friend_data)
+            if friend_list:
                 friends_list.append({
-                    **friend_data.data[0],
+                    **friend_list[0],
                     'friendship_created_at': friendship['created_at']
                 })
 
@@ -298,7 +308,7 @@ def check_friendship(user_id):
             'uid2': user_id
         }).execute()
         
-        is_friend = result.data if result.data else False
+        is_friend = get_data(result) if get_data(result) else False
         
         # Check for pending friend requests
         request_status = 'none'
@@ -309,18 +319,20 @@ def check_friendship(user_id):
             'sender_id', current_user_id
         ).eq('receiver_id', user_id).eq('status', 'pending').execute()
         
-        if sent_request.data:
+        sent_data = get_data(sent_request)
+        if sent_data:
             request_status = 'pending_sent'
-            request_id = sent_request.data[0]['id']
+            request_id = sent_data[0]['id']
         else:
             # Check if current user received a request
             received_request = supabase.table('friend_requests').select('id').eq(
                 'sender_id', user_id
             ).eq('receiver_id', current_user_id).eq('status', 'pending').execute()
             
-            if received_request.data:
+            received_data = get_data(received_request)
+            if received_data:
                 request_status = 'pending_received'
-                request_id = received_request.data[0]['id']
+                request_id = received_data[0]['id']
         
         return jsonify({
             'success': True,

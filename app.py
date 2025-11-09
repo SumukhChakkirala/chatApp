@@ -10,6 +10,7 @@ import os
 import uuid
 from datetime import datetime
 import sys
+from supabase_helper import get_data, get_count
 # Print Supabase version for debugging
 try:
     import pkg_resources
@@ -91,7 +92,8 @@ def signup():
             # Check if username already exists
             try:
                 existing = supabase.table('users').select('id').eq('username', username).execute()
-                if existing.data:
+                existing_data = get_data(existing)
+                if existing_data:
                     flash('Username already exists', 'error')
                     return render_template('signup.html')
             except Exception as e:
@@ -109,8 +111,9 @@ def signup():
                     'password': hashed_password
                 }).execute()
                 
-                if result.data and len(result.data) > 0:
-                    user = result.data[0]
+                result_data = get_data(result)
+                if result_data and len(result_data) > 0:
+                    user = result_data[0]
                     user_id = user['id']
                     user_tag = user.get('user_tag', f"{username}#00001")
                     
@@ -150,10 +153,11 @@ def login():
             
             try:
                 # Get user from database
-                user_data = supabase.table('users').select('*').eq('username', username).execute()
+                user_response = supabase.table('users').select('*').eq('username', username).execute()
+                user_data = get_data(user_response)
                 
-                if user_data.data and len(user_data.data) > 0:
-                    user = user_data.data[0]
+                if user_data and len(user_data) > 0:
+                    user = user_data[0]
                     
                     # Check password hash
                     if check_password_hash(user['password'], password):
@@ -204,7 +208,7 @@ def chat():
     try:
         # Get all users except current user (for search functionality)
         users_response = supabase.table('users').select('*').neq('id', session['user_id']).execute()
-        users = users_response.data
+        users = get_data(users_response)
         
         # No auto-pairing - empty chat window by default
         return render_template('chat.html', 
@@ -237,7 +241,8 @@ def send_message():
         # Validate that receiver exists
         try:
             receiver_check = supabase.table('users').select('id').eq('id', receiver_id).execute()
-            if not receiver_check.data:
+            receiver_data = get_data(receiver_check)
+            if not receiver_data:
                 return jsonify({'success': False, 'error': 'Recipient not found'}), 400
         except Exception as e:
             print(f"Error checking receiver: {e}")
@@ -274,19 +279,22 @@ def send_message():
         }
         
         message_response = supabase.table('direct_messages').insert(message_data).execute()
-        message = message_response.data[0] if message_response.data else None
+        message_data_result = get_data(message_response)
+        message = message_data_result[0] if message_data_result else None
         
         if message:
             # Enrich message with replied_to data if present
             if message.get('reply_to_id'):
                 replied_msg_response = supabase.table('direct_messages').select('content, sender_id').eq('id', message['reply_to_id']).execute()
-                if replied_msg_response.data:
-                    replied_msg = replied_msg_response.data[0]
+                replied_msg_data = get_data(replied_msg_response)
+                if replied_msg_data:
+                    replied_msg = replied_msg_data[0]
                     sender_response = supabase.table('users').select('username').eq('id', replied_msg['sender_id']).execute()
-                    if sender_response.data:
+                    sender_data = get_data(sender_response)
+                    if sender_data:
                         message['replied_to'] = {
                             'content': replied_msg['content'],
-                            'sender': {'username': sender_response.data[0]['username']}
+                            'sender': {'username': sender_data[0]['username']}
                         }
             
             # Emit via SocketIO for real-time delivery
@@ -327,8 +335,8 @@ def get_messages():
             q2 = q2.filter('created_at', 'gt', since)
         r2 = q2.execute()
 
-        data1 = r1.data if r1 and r1.data else []
-        data2 = r2.data if r2 and r2.data else []
+        data1 = get_data(r1) if r1 else []
+        data2 = get_data(r2) if r2 else []
         messages = sorted([*data1, *data2], key=lambda m: m.get('created_at') or '')
         
         # Enrich messages with replied_to data
@@ -337,12 +345,14 @@ def get_messages():
                 try:
                     # Fetch the replied-to message
                     replied_msg_response = supabase.table('direct_messages').select('id, content, sender_id').eq('id', message['reply_to_id']).execute()
-                    if replied_msg_response.data:
-                        replied_msg = replied_msg_response.data[0]
+                    replied_msg_data = get_data(replied_msg_response)
+                    if replied_msg_data:
+                        replied_msg = replied_msg_data[0]
                         # Fetch the sender of replied message
                         sender_response = supabase.table('users').select('id, username').eq('id', replied_msg['sender_id']).execute()
-                        if sender_response.data:
-                            replied_msg['sender'] = sender_response.data[0]
+                        sender_data = get_data(sender_response)
+                        if sender_data:
+                            replied_msg['sender'] = sender_data[0]
                         message['replied_to'] = replied_msg
                 except Exception as e:
                     print(f"Error fetching replied message: {e}")
@@ -378,8 +388,9 @@ def search_users():
 
         users_map = {}
         for resp in (q_username, q_usertag):
-            if resp and resp.data:
-                for u in resp.data:
+            resp_data = get_data(resp)
+            if resp_data:
+                for u in resp_data:
                     users_map[u['id']] = u
 
         users = list(users_map.values())[:20]
@@ -441,12 +452,13 @@ def handle_server_message(data):
         user_id = session['user_id']
         
         # Check if user is a member
-        is_member = supabase.rpc('is_server_member', {
+        is_member_response = supabase.rpc('is_server_member', {
             'sid': server_id,
             'uid': user_id
         }).execute()
+        is_member_data = get_data(is_member_response)
         
-        if not is_member.data:
+        if not is_member_data:
             emit('error', {'message': 'Not a member of this server'})
             return
         
@@ -459,33 +471,37 @@ def handle_server_message(data):
         }
         
         result = supabase.table('server_messages').insert(message_data).execute()
+        result_data = get_data(result)
         
-        if result.data:
-            msg = result.data[0]
+        if result_data:
+            msg = result_data[0]
             
             # Get sender info
-            sender = supabase.table('users').select(
+            sender_response = supabase.table('users').select(
                 'id, username, user_tag'
             ).eq('id', user_id).execute()
+            sender_data = get_data(sender_response)
             
             message_info = {
                 'id': msg['id'],
                 'content': msg['content'],
                 'created_at': msg['created_at'],
-                'sender': sender.data[0] if sender.data else None,
+                'sender': sender_data[0] if sender_data else None,
                 'server_id': server_id
             }
             
             # Enrich message with replied_to data if present
             if msg.get('reply_to_id'):
                 replied_msg_response = supabase.table('server_messages').select('content, sender_id').eq('id', msg['reply_to_id']).execute()
-                if replied_msg_response.data:
-                    replied_msg = replied_msg_response.data[0]
-                    sender_response = supabase.table('users').select('username').eq('id', replied_msg['sender_id']).execute()
-                    if sender_response.data:
+                replied_msg_data = get_data(replied_msg_response)
+                if replied_msg_data:
+                    replied_msg = replied_msg_data[0]
+                    sender_response2 = supabase.table('users').select('username').eq('id', replied_msg['sender_id']).execute()
+                    sender_data2 = get_data(sender_response2)
+                    if sender_data2:
                         message_info['replied_to'] = {
                             'content': replied_msg['content'],
-                            'sender': {'username': sender_response.data[0]['username']}
+                            'sender': {'username': sender_data2[0]['username']}
                         }
             
             # Broadcast to all members in the server room
