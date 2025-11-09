@@ -16,7 +16,10 @@ from routes.servers import servers_bp
 
 app = Flask(__name__)
 app.config.from_object(Config)
-socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Use threading mode for local development, gevent for production
+async_mode = 'gevent' if os.environ.get('PORT') else 'threading'
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode=async_mode)
 
 # Debug prints
 print("Python version:", sys.version)
@@ -458,4 +461,4 @@ def handle_server_message(data):
         emit('error', {'message': str(e)})
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
