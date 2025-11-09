@@ -82,10 +82,12 @@ class Message:
     def get_conversation(user1_id, user2_id):
         """Get messages between two users"""
         try:
-            response = supabase.table('direct_messages').select('*').or_(
-                f"and(sender_id.eq.{user1_id},receiver_id.eq.{user2_id}),and(sender_id.eq.{user2_id},receiver_id.eq.{user1_id})"
-            ).order('created_at', desc=False).execute()
-            return response.data
+            r1 = supabase.table('direct_messages').select('*') \
+                .eq('sender_id', user1_id).eq('receiver_id', user2_id).execute()
+            r2 = supabase.table('direct_messages').select('*') \
+                .eq('sender_id', user2_id).eq('receiver_id', user1_id).execute()
+            data = (r1.data or []) + (r2.data or [])
+            return sorted(data, key=lambda m: m.get('created_at') or '')
         except Exception as e:
             print(f"Error fetching messages: {e}")
             return []

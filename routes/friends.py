@@ -60,9 +60,12 @@ def send_friend_request():
             return jsonify({'success': False, 'error': 'Already friends'}), 400
         
         # Check if request already exists
-        existing_request = supabase.table('friend_requests').select('*').or_(
-            f"and(sender_id.eq.{sender_id},receiver_id.eq.{receiver_id}),and(sender_id.eq.{receiver_id},receiver_id.eq.{sender_id})"
-        ).execute()
+        # Check if an existing request in either direction without using .or_
+        req1 = supabase.table('friend_requests').select('*') \
+            .eq('sender_id', sender_id).eq('receiver_id', receiver_id).execute()
+        req2 = supabase.table('friend_requests').select('*') \
+            .eq('sender_id', receiver_id).eq('receiver_id', sender_id).execute()
+        existing_request = {'data': (req1.data or []) + (req2.data or [])}
         
         if existing_request.data:
             return jsonify({'success': False, 'error': 'Friend request already exists'}), 400
@@ -230,33 +233,28 @@ def get_friends():
         print("User ID:", user_id)
         print("=" * 50)
         
-        # Get friendships where user is either user1 or user2
-        friendships = supabase.table('friendships').select('*').or_(
-            f'user1_id.eq.{user_id},user2_id.eq.{user_id}'
-        ).execute()
-        
-        print(f"Found {len(friendships.data) if friendships.data else 0} friendships")
-        
+        # Query both directions (user as user1 or user2) and merge results
+        f1 = supabase.table('friendships').select('*').eq('user1_id', user_id).execute()
+        f2 = supabase.table('friendships').select('*').eq('user2_id', user_id).execute()
+        merged_friendships = (f1.data or []) + (f2.data or [])
+
+        print(f"Found {len(merged_friendships)} friendships")
+
         friends_list = []
-        for friendship in friendships.data if friendships.data else []:
+        for friendship in merged_friendships:
             # Determine which ID is the friend's ID
             friend_id = friendship['user2_id'] if friendship['user1_id'] == user_id else friendship['user1_id']
-            
+
             # Get friend's details
             friend_data = supabase.table('users').select('id, username, user_tag').eq('id', friend_id).execute()
-            
             if friend_data.data:
                 friends_list.append({
                     **friend_data.data[0],
                     'friendship_created_at': friendship['created_at']
                 })
-        
+
         print(f"Returning {len(friends_list)} friends")
-        
-        return jsonify({
-            'success': True,
-            'friends': friends_list
-        }), 200
+        return jsonify({'success': True, 'friends': friends_list}), 200
         
     except Exception as e:
         print(f"Get friends error: {e}")
@@ -273,9 +271,9 @@ def remove_friend(user_id):
         current_user_id = session['user_id']
         
         # Delete the friendship (works regardless of user1/user2 order due to CHECK constraint)
-        supabase.table('friendships').delete().or_(
-            f'and(user1_id.eq.{current_user_id},user2_id.eq.{user_id}),and(user1_id.eq.{user_id},user2_id.eq.{current_user_id})'
-        ).execute()
+        # Delete friendship regardless of ordering by performing two deletes
+        supabase.table('friendships').delete().eq('user1_id', current_user_id).eq('user2_id', user_id).execute()
+        supabase.table('friendships').delete().eq('user1_id', user_id).eq('user2_id', current_user_id).execute()
         
         return jsonify({
             'success': True,

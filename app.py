@@ -1,3 +1,4 @@
+
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from flask_socketio import SocketIO, emit, join_room
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -9,6 +10,12 @@ import os
 import uuid
 from datetime import datetime
 import sys
+# Print Supabase version for debugging
+try:
+    import pkg_resources
+    print(f"Supabase package version: {pkg_resources.get_distribution('supabase').version}")
+except Exception as e:
+    print(f"Could not determine Supabase version: {e}")
 
 # Import blueprints
 from routes.friends import friends_bp
@@ -305,18 +312,24 @@ def get_messages():
         return jsonify({'success': False, 'error': 'Friend ID is required'}), 400
 
     try:
-        filters = (
-            f"and(sender_id.eq.{session['user_id']},receiver_id.eq.{friend_id}),"
-            f"and(sender_id.eq.{friend_id},receiver_id.eq.{session['user_id']})"
-        )
-
-        query = supabase.table('direct_messages').select('*').or_(filters).order('created_at', desc=False)
-
+        # Fetch messages in both directions and merge (avoids dependency on .or_)
+        q1 = supabase.table('direct_messages').select('*') \
+            .eq('sender_id', session['user_id']) \
+            .eq('receiver_id', friend_id)
         if since:
-            query = query.filter('created_at', 'gt', since)
+            q1 = q1.filter('created_at', 'gt', since)
+        r1 = q1.execute()
 
-        response = query.execute()
-        messages = response.data if response.data else []
+        q2 = supabase.table('direct_messages').select('*') \
+            .eq('sender_id', friend_id) \
+            .eq('receiver_id', session['user_id'])
+        if since:
+            q2 = q2.filter('created_at', 'gt', since)
+        r2 = q2.execute()
+
+        data1 = r1.data if r1 and r1.data else []
+        data2 = r2.data if r2 and r2.data else []
+        messages = sorted([*data1, *data2], key=lambda m: m.get('created_at') or '')
         
         # Enrich messages with replied_to data
         for message in messages:
@@ -357,12 +370,19 @@ def search_users():
         return jsonify({'success': True, 'users': []}), 200
     
     try:
-        # Search by username or user_tag
-        users_response = supabase.table('users').select('id, username, user_tag').neq('id', session['user_id']).or_(
-            f"username.ilike.%{search_query}%,user_tag.ilike.%{search_query}%"
-        ).limit(20).execute()
-        
-        users = users_response.data if users_response.data else []
+        # Run two separate searches and merge results (avoids .or_ incompatibility)
+        base = supabase.table('users').select('id, username, user_tag').neq('id', session['user_id'])
+
+        q_username = base.filter('username', 'ilike', f'%{search_query}%').limit(20).execute()
+        q_usertag = base.filter('user_tag', 'ilike', f'%{search_query}%').limit(20).execute()
+
+        users_map = {}
+        for resp in (q_username, q_usertag):
+            if resp and resp.data:
+                for u in resp.data:
+                    users_map[u['id']] = u
+
+        users = list(users_map.values())[:20]
         print(f"Found {len(users)} users")
         return jsonify({'success': True, 'users': users}), 200
     except Exception as e:
