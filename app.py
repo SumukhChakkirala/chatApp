@@ -8,6 +8,7 @@ from functools import wraps
 import os
 import uuid
 from datetime import datetime
+import sys
 
 # Import blueprints
 from routes.friends import friends_bp
@@ -16,6 +17,11 @@ from routes.servers import servers_bp
 app = Flask(__name__)
 app.config.from_object(Config)
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Debug prints
+print("Python version:", sys.version)
+print("SUPABASE_URL:", app.config['SUPABASE_URL'])
+print("SUPABASE_KEY:", app.config['SUPABASE_KEY'])
 
 # Register blueprints
 app.register_blueprint(friends_bp)
