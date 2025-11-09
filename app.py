@@ -458,5 +458,4 @@ def handle_server_message(data):
         emit('error', {'message': str(e)})
 
 if __name__ == '__main__':
-    # Use eventlet for production-ready WebSocket server
-    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True, allow_unsafe_werkzeug=True)
