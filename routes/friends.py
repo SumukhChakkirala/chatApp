@@ -223,10 +223,19 @@ def get_friends():
     try:
         user_id = session['user_id']
         
+        # DEBUG: Print session info
+        print("=" * 50)
+        print("GET_FRIENDS DEBUG")
+        print("Session:", dict(session))
+        print("User ID:", user_id)
+        print("=" * 50)
+        
         # Get friendships where user is either user1 or user2
         friendships = supabase.table('friendships').select('*').or_(
             f'user1_id.eq.{user_id},user2_id.eq.{user_id}'
         ).execute()
+        
+        print(f"Found {len(friendships.data) if friendships.data else 0} friendships")
         
         friends_list = []
         for friendship in friendships.data if friendships.data else []:
@@ -242,6 +251,8 @@ def get_friends():
                     'friendship_created_at': friendship['created_at']
                 })
         
+        print(f"Returning {len(friends_list)} friends")
+        
         return jsonify({
             'success': True,
             'friends': friends_list
@@ -249,7 +260,9 @@ def get_friends():
         
     except Exception as e:
         print(f"Get friends error: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e), 'friends': []}), 500
 
 
 @friends_bp.route('/<user_id>', methods=['DELETE'])

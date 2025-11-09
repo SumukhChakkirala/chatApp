@@ -17,6 +17,12 @@ from routes.servers import servers_bp
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# CRITICAL: Session cookie configuration for production
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS only
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 hours
+
 # Use threading mode for local development, gevent for production
 async_mode = 'gevent' if os.environ.get('PORT') else 'threading'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode=async_mode)
@@ -339,6 +345,14 @@ def get_messages():
 def search_users():
     search_query = request.args.get('q', '').strip()
     
+    # DEBUG: Print session info
+    print("=" * 50)
+    print("SEARCH_USERS DEBUG")
+    print("Session:", dict(session))
+    print("User ID in session:", session.get('user_id'))
+    print("Search query:", search_query)
+    print("=" * 50)
+    
     if not search_query:
         return jsonify({'success': True, 'users': []}), 200
     
@@ -349,9 +363,12 @@ def search_users():
         ).limit(20).execute()
         
         users = users_response.data if users_response.data else []
+        print(f"Found {len(users)} users")
         return jsonify({'success': True, 'users': users}), 200
     except Exception as e:
         print(f"Search users error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # SocketIO events
